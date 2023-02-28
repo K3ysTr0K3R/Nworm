@@ -4,36 +4,29 @@ if [ "$nmap"!= "0" ]; then
     nmap -T5 -vv -Pn -p 25 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1
     http_servers=$(nmap -T5 -vv -Pn -p 80 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # http ports
     whatweb_scan=$($http_servers | httprobe)
-    whatweb $whatweb_scan --no-errors 
-    w3af_scan=$($http_servers | w3af | tee w3af &> /dev/null; grep "http server" w3af | awk '{print $3}' | cut -d '/' -f 1) # http servers
+    whatweb $whatweb_scan --no-errors | tee whatweb_scan_nmap &> /dev/null
+    gobuster dir -u $A --no-error -w /usr/share/wordlists/dirb/common.txt -b "204,301,307,401,403,404,202,418,323" > http_fuzzer_output.txt 
+    echo "HTTP/HTTPS 443/80 results stored in: whatweb_scan_nmap"
+    echo "Checking for XSSER vulns"
     xss_scan=$(xsser -v --list-xsser -a -p $http_servers | tee xsser &> /dev/null; grep "XSSer detected" xsser)
-    rce_scan=$(rceer -v --list-rceer -a -p $http_servers | tee rceer &> /dev/null; grep "RCEer detected" rceer)
-    if [ "$xss_scan"!= "" ] && [ "$rce_scan"!= "" ]; then
-        echo "xsser and rceer vulnerabilities found:"
+    if [ "$xss_scan"!= "" ]; then
+        echo "xsser vulnerabilities found:"
         echo "$xss_scan"
-        echo "$rce_scan"
+    echo "checking for sql injection vulns"
+    sql_scan=$(sqlninja -s -d $whatweb_scan | tee sqlninja &> /dev/null; grep "SQL injection detected" sqlninja)
+    if [ "$sql_scan"!= "" ]; then
+        echo "sql injection vulnerabilities found:"
+        echo "$sql_scan"
+    fi
+fi
 
-    smb=$(nmap -T5 -vv -Pn -p 445 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # smtp ports
-    if [ "$smb"!= "0" ]; then
-        $smb | smbprobe
+smtp=$(nmap -T5 -vv -Pn -p 25 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # smtp ports
+if [ "$smtp"!= "" ]; then
+    echo "SMTP service is open for $smtp"
+    echo "Enumerating SMTP users"
+    smtp_user_scan=$(nmap -T4 -vv -sV -Pn $smtp--script=smtp-enum-users)
+    if [ "$smtp_scan"!= "" ]; then
+        echo "SMTP users found:"
+        echo "$smtp_scan"
     fi
-    tftp=$(nmap -T5 -vv -Pn -p 69 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # tftp ports
-    if [ "x$tftp"!= "x0" ]; then
-        $tftp | tftp-enum-passwords
-    fi
-    ftp=$(nmap -T5 -vv -Pn -p 21 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # ftp ports
-    if [ "x$ftp"!= "x0" ]; then
-        $ftp | ftp-user-enum
-    fi
-    ssh=$(nmap -T5 -vv -Pn -p 22 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # ssh ports
-    if [ "x$ssh"!= "x0" ]; then
-        $ssh | ssh-keyscan -p 22
-    fi
-    telnet=$(nmap -T5 -vv -Pn -p 23 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # telnet ports
-    if [ "x$telnet"!= "x0" ]; then
-    	$telnet | telnet -e
-    fi
-    snmp=$(nmap -T5 -vv -Pn -p 161 $1/24 | tee nmap &> /dev/null; grep "open" nmap | awk '{print $6}' | cut -d '/' -f 1) # snmp ports
-    if [ "x$snmp"!= "x0" ]; then
-    	$snmp | snmp-brute
-    fi
+fi
